@@ -1,11 +1,20 @@
 package com.example.minimalphone.viewmodel
 
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.minimalphone.data.UsageStatsHelper
 import com.example.minimalphone.data.UsageState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 📘 BEGINNER CONCEPT: What is a ViewModel?
@@ -35,10 +44,29 @@ import kotlinx.coroutines.flow.update
 // Compose screen) is automatically notified and updates itself.
 //
 // Flow of data:
-//   User clicks button
+//   ViewModel fetches usage in background
 //     → ViewModel updates MutableStateFlow
 //       → Compose sees the new value
 //         → UI redraws (this is called "recomposition")
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 📘 BEGINNER CONCEPT: What is a Coroutine?
+// ─────────────────────────────────────────────────────────────────────────────
+// A coroutine is a lightweight task that can pause and resume without blocking
+// the whole thread.  We use coroutines to do async work in a clean way.
+//
+// 📘 BEGINNER CONCEPT: What is Dispatchers.IO?
+// Dispatchers.IO is a coroutine dispatcher optimized for disk/network/system
+// operations. Querying UsageStatsManager can be heavy, so we run it on IO.
+//
+// 📘 BEGINNER CONCEPT: Why use viewModelScope?
+// viewModelScope is tied to the ViewModel lifecycle. When ViewModel is cleared,
+// its coroutines are automatically cancelled (no leaks, no wasted work).
+//
+// 📘 BEGINNER CONCEPT: Why avoid heavy work on Main thread?
+// The main thread draws UI and handles touch input. Heavy work there causes
+// jank (skipped frames). Running heavy work on IO keeps UI smooth.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -46,7 +74,10 @@ import kotlinx.coroutines.flow.update
  *
  * Holds the current [UsageState] and exposes actions the UI can trigger.
  */
-class DashboardViewModel : ViewModel() {
+class DashboardViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val usageStatsHelper = UsageStatsHelper(application.applicationContext)
+    private val refreshIntervalMs = 30_000L
 
     // ── Internal mutable state (only this class can change it) ───────────
     private val _uiState = MutableStateFlow(UsageState())
@@ -56,29 +87,47 @@ class DashboardViewModel : ViewModel() {
     // write to it — keeping the data flow ONE-DIRECTIONAL (ViewModel → UI).
     val uiState: StateFlow<UsageState> = _uiState.asStateFlow()
 
-    // ── Actions ──────────────────────────────────────────────────────────
+    init {
+        startUsageAutoRefresh()
+    }
 
-    /**
-     * Adds 10 minutes of "usage".
-     *
-     * We use [MutableStateFlow.update] which gives us the CURRENT value,
-     * lets us create a NEW copy with the change, and sets it atomically
-     * (thread-safe).
-     */
-    fun increaseUsage() {
-        _uiState.update { current ->
-            // .copy() creates a new UsageState with only the changed field.
-            // The old object is NOT modified — this is called "immutability".
-            current.copy(usedMinutes = current.usedMinutes + 10)
+    private fun startUsageAutoRefresh() {
+        viewModelScope.launch {
+            while (isActive) {
+                refreshUsageNow()
+                delay(refreshIntervalMs)
+            }
         }
     }
 
-    /**
-     * Resets usage back to 0 minutes.
-     */
-    fun resetUsage() {
-        _uiState.update { current ->
-            current.copy(usedMinutes = 0)
+    fun refreshUsageNow() {
+        viewModelScope.launch {
+            val hasPermission = usageStatsHelper.hasUsageAccessPermission()
+
+            if (!hasPermission) {
+                _uiState.update { current ->
+                    current.copy(
+                        hasUsagePermission = false,
+                        isLoading = false,
+                        usedMinutes = 0,
+                    )
+                }
+                return@launch
+            }
+
+            _uiState.update { current -> current.copy(hasUsagePermission = true, isLoading = true) }
+
+            val usageMinutes = withContext(Dispatchers.IO) {
+                usageStatsHelper.getTodayForegroundUsageMinutes()
+            }
+
+            _uiState.update { current ->
+                current.copy(
+                    hasUsagePermission = true,
+                    isLoading = false,
+                    usedMinutes = usageMinutes,
+                )
+            }
         }
     }
 }

@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -19,11 +18,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.minimalphone.data.UsageStatsHelper
 import com.example.minimalphone.data.UsageState
 import com.example.minimalphone.ui.theme.FocusLiteTheme
 import com.example.minimalphone.viewmodel.DashboardViewModel
@@ -50,11 +51,11 @@ import com.example.minimalphone.viewmodel.DashboardViewModel
 // some state it reads has changed.
 //
 // Example flow:
-//   1. User taps "Increase Usage".
-//   2. ViewModel updates usedMinutes from 80 → 90 inside MutableStateFlow.
+//   1. ViewModel fetches new usage data.
+//   2. ViewModel updates MutableStateFlow with the new minutes.
 //   3. collectAsStateWithLifecycle() detects the new value.
 //   4. Compose sees that `state` changed and re-runs DashboardScreen.
-//   5. The Text composables now show "1h 30m" instead of "1h 20m".
+//   5. The Text composables now show the latest real usage.
 //
 // Important: Compose is SMART — it only recomposes the composables that
 // actually read the changed data.  Everything else stays untouched.
@@ -65,13 +66,14 @@ import com.example.minimalphone.viewmodel.DashboardViewModel
  *
  * @param viewModel  Provided automatically by [viewModel()] — you rarely
  *                   need to create one yourself.
- * @param onIncreaseClick  Called when the user taps "Increase Usage".
- * @param onResetClick     Called when the user taps "Reset".
  */
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel = viewModel(),
 ) {
+    val context = LocalContext.current
+    val usageStatsHelper = UsageStatsHelper(context)
+
     // ── Observe the ViewModel's state ────────────────────────────────────
     // collectAsStateWithLifecycle() converts the StateFlow into a Compose
     // State object.  It automatically stops collecting when the screen is
@@ -81,8 +83,8 @@ fun DashboardScreen(
     // Delegate to a "stateless" version so we can preview it easily.
     DashboardContent(
         state = state,
-        onIncreaseClick = viewModel::increaseUsage,
-        onResetClick = viewModel::resetUsage,
+        onOpenUsageSettingsClick = usageStatsHelper::openUsageAccessSettings,
+        onRefreshClick = viewModel::refreshUsageNow,
     )
 }
 
@@ -94,8 +96,8 @@ fun DashboardScreen(
 @Composable
 private fun DashboardContent(
     state: UsageState,
-    onIncreaseClick: () -> Unit,
-    onResetClick: () -> Unit,
+    onOpenUsageSettingsClick: () -> Unit,
+    onRefreshClick: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -120,6 +122,46 @@ private fun DashboardContent(
         )
 
         Spacer(modifier = Modifier.height(48.dp))
+
+        if (!state.hasUsagePermission) {
+            Text(
+                text = "Usage access is required to read real screen-time.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = state.permissionHelpText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Button(
+                onClick = onOpenUsageSettingsClick,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ),
+            ) {
+                Text("Open Usage Access Settings")
+            }
+
+            Spacer(modifier = Modifier.weight(1f))
+            return
+        }
+
+        if (state.isLoading) {
+            Text(
+                text = "Loading today's usage...",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+        }
 
         // ── Today's Usage ────────────────────────────────────────────────
         StatRow(label = "Today's Usage", value = state.usedFormatted)
@@ -150,32 +192,13 @@ private fun DashboardContent(
             )
         }
 
-        Spacer(modifier = Modifier.weight(1f))  // push buttons to bottom
+        Spacer(modifier = Modifier.weight(1f))
 
-        // ── Buttons ──────────────────────────────────────────────────────
-        Row(
+        OutlinedButton(
+            onClick = onRefreshClick,
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            // "Increase Usage" — filled button
-            Button(
-                onClick = onIncreaseClick,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ),
-            ) {
-                Text("Increase Usage")
-            }
-
-            // "Reset" — outlined button
-            OutlinedButton(
-                onClick = onResetClick,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("Reset")
-            }
+            Text("Refresh now")
         }
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -223,8 +246,8 @@ private fun DashboardPreviewLight() {
     FocusLiteTheme(darkTheme = false) {
         DashboardContent(
             state = UsageState(usedMinutes = 80, dailyLimitMinutes = 120),
-            onIncreaseClick = {},
-            onResetClick = {},
+            onOpenUsageSettingsClick = {},
+            onRefreshClick = {},
         )
     }
 }
@@ -234,9 +257,14 @@ private fun DashboardPreviewLight() {
 private fun DashboardPreviewDark() {
     FocusLiteTheme(darkTheme = true) {
         DashboardContent(
-            state = UsageState(usedMinutes = 130, dailyLimitMinutes = 120),
-            onIncreaseClick = {},
-            onResetClick = {},
+            state = UsageState(
+                usedMinutes = 130,
+                dailyLimitMinutes = 120,
+                hasUsagePermission = true,
+                isLoading = false,
+            ),
+            onOpenUsageSettingsClick = {},
+            onRefreshClick = {},
         )
     }
 }

@@ -14,12 +14,16 @@ package com.example.minimalphone.data
 /**
  * Represents the current screen-time state shown on the dashboard.
  *
- * @param usedMinutes  How many minutes the user has "used" today (fake data).
+ * @param usedMinutes  How many minutes the user has used today.
  * @param dailyLimitMinutes  The maximum allowed screen time per day.
+ * @param hasUsagePermission Whether Usage Access permission is granted.
+ * @param isLoading Whether usage data is currently being loaded in background.
  */
 data class UsageState(
-    val usedMinutes: Int = 80,          // default: 1 h 20 m  (fake starting value)
-    val dailyLimitMinutes: Int = 120    // default: 2 h daily budget
+    val usedMinutes: Int = 0,
+    val dailyLimitMinutes: Int = 120,
+    val hasUsagePermission: Boolean = false,
+    val isLoading: Boolean = true
 ) {
     // ── Computed properties ──────────────────────────────────────────────
     // These are NOT stored — they are calculated every time you read them.
@@ -40,6 +44,10 @@ data class UsageState(
     /** True when the user has exceeded the daily limit. */
     val isOverLimit: Boolean
         get() = usedMinutes >= dailyLimitMinutes
+
+    /** Guidance text shown when usage access is not granted yet. */
+    val permissionHelpText: String
+        get() = "Enable Usage Access: Settings > Apps > Special app access > Usage access > FocusLite"
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
