@@ -8,30 +8,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.minimalphone.data.UsageStatsHelper
-import com.example.minimalphone.data.UsageState
-import com.example.minimalphone.ui.theme.FocusLiteTheme
-import com.example.minimalphone.viewmodel.DashboardViewModel
+import com.example.minimalphone.ui.state.DashboardUiState
+import com.example.minimalphone.ui.state.formatMinutes
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 📘 BEGINNER CONCEPT: Why is Compose "reactive"?
@@ -65,226 +51,71 @@ import com.example.minimalphone.viewmodel.DashboardViewModel
 // actually read the changed data.  Everything else stays untouched.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * The main dashboard screen.
- *
- * @param viewModel  Provided automatically by [viewModel()] — you rarely
- *                   need to create one yourself.
- * @param onSettingsClick  Called when user taps the settings icon.
- */
 @Composable
 fun DashboardScreen(
-    viewModel: DashboardViewModel = viewModel(),
-    onSettingsClick: () -> Unit = {},
-) {
-    val context = LocalContext.current
-    val usageStatsHelper = UsageStatsHelper(context)
-
-    // ── Observe the ViewModel's state ────────────────────────────────────
-    val state by viewModel.uiState.collectAsStateWithLifecycle()
-
-    // Delegate to a "stateless" version so we can preview it easily.
-    DashboardContent(
-        state = state,
-        onOpenUsageSettingsClick = viewModel::openUsageAccessSettings,
-        onRefreshClick = viewModel::refreshUsageAndSettings,
-        onSettingsClick = onSettingsClick,
-    )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Stateless content — receives data & callbacks, draws UI.
-// Having a separate stateless composable makes previews and testing easier.
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun DashboardContent(
-    state: UsageState,
+    state: DashboardUiState,
     onOpenUsageSettingsClick: () -> Unit,
     onRefreshClick: () -> Unit,
-    onSettingsClick: () -> Unit = {},
+    onSetLimitClick: () -> Unit,
+    onAppSelectionClick: () -> Unit,
+    onSettingsClick: () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 48.dp),
+            .padding(horizontal = 16.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.Top,
     ) {
-        // ── Title + Settings button ──────────────────────────────────────
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "FocusLite",
-                style = MaterialTheme.typography.displayLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-            IconButton(onClick = onSettingsClick) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "Settings",
-                    tint = MaterialTheme.colorScheme.onBackground,
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Your screen-time dashboard",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.secondary,
-        )
-
-        Spacer(modifier = Modifier.height(48.dp))
-
-        if (!state.hasUsagePermission) {
-            Text(
-                text = "Usage access is required to read real screen-time.",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = state.permissionHelpText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary,
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Button(
-                onClick = onOpenUsageSettingsClick,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                ),
-            ) {
-                Text("Open Usage Access Settings")
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-            return
-        }
-
-        if (state.isLoading) {
-            Text(
-                text = "Loading today's usage...",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary,
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-        }
-
-        // ── Today's Usage ────────────────────────────────────────────────
-        StatRow(label = "Today's Usage", value = state.usedFormatted)
-
-        HorizontalDivider(
-            modifier = Modifier.padding(vertical = 16.dp),
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.12f),
-        )
-
-        // ── Remaining ────────────────────────────────────────────────────
-        StatRow(
-            label = "Remaining",
-            value = state.remainingFormatted,
-            // Show a warning color when the limit has been reached.
-            valueColor = if (state.isOverLimit) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.onBackground
-            },
-        )
-
-        if (state.isOverLimit) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Daily limit reached!",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-
-        Spacer(modifier = Modifier.weight(1f))
-
-        OutlinedButton(
-            onClick = onRefreshClick,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("Refresh now")
-        }
-
+        Text("FocusLite", style = MaterialTheme.typography.headlineLarge)
+        Text("Cold. Minimal. Functional.", color = MaterialTheme.colorScheme.secondary)
         Spacer(modifier = Modifier.height(24.dp))
-    }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Small reusable composable — a label on the left, a value on the right.
-// ─────────────────────────────────────────────────────────────────────────────
+        when (state) {
+            DashboardUiState.Loading -> {
+                Text("Loading usage…")
+            }
 
-@Composable
-private fun StatRow(
-    label: String,
-    value: String,
-    valueColor: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.onBackground,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-            color = valueColor,
-        )
-    }
-}
+            is DashboardUiState.PermissionRequired -> {
+                Text("Usage Access Required", style = MaterialTheme.typography.titleLarge)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(state.helpText, color = MaterialTheme.colorScheme.secondary)
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = onOpenUsageSettingsClick, modifier = Modifier.fillMaxWidth()) {
+                    Text("Open Usage Settings")
+                }
+            }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 📘 BEGINNER CONCEPT: @Preview
-// ─────────────────────────────────────────────────────────────────────────────
-// @Preview lets you see the composable inside Android Studio WITHOUT running
-// the app on a device.  Very useful for quick design iteration.
-// ─────────────────────────────────────────────────────────────────────────────
+            is DashboardUiState.Ready -> {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Today", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        formatMinutes(state.usedMinutes),
+                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Remaining", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        formatMinutes(state.remainingMinutes),
+                        style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                if (state.isOverLimit) {
+                    Text("Limit Reached", color = MaterialTheme.colorScheme.error)
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = onRefreshClick, modifier = Modifier.fillMaxWidth()) { Text("Refresh") }
+            }
+        }
 
-@Preview(showBackground = true, name = "Dashboard – Light")
-@Composable
-private fun DashboardPreviewLight() {
-    FocusLiteTheme(darkTheme = false) {
-        DashboardContent(
-            state = UsageState(usedMinutes = 80, dailyLimitMinutes = 120),
-            onOpenUsageSettingsClick = {},
-            onRefreshClick = {},
-            onSettingsClick = {},
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "Dashboard – Dark")
-@Composable
-private fun DashboardPreviewDark() {
-    FocusLiteTheme(darkTheme = true) {
-        DashboardContent(
-            state = UsageState(
-                usedMinutes = 130,
-                dailyLimitMinutes = 120,
-                hasUsagePermission = true,
-                isLoading = false,
-            ),
-            onOpenUsageSettingsClick = {},
-            onSettingsClick = {},
-            onRefreshClick = {},
-        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onSetLimitClick, modifier = Modifier.fillMaxWidth()) { Text("Set Daily Limit") }
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(onClick = onAppSelectionClick, modifier = Modifier.fillMaxWidth()) { Text("App Blocking List") }
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(onClick = onSettingsClick, modifier = Modifier.fillMaxWidth()) { Text("Settings") }
     }
 }

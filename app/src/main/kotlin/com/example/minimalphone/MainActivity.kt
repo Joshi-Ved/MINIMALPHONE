@@ -1,5 +1,6 @@
 package com.example.minimalphone
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -8,12 +9,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.minimalphone.domain.model.AppBlockMode
+import com.example.minimalphone.ui.AppSelectionScreen
 import com.example.minimalphone.ui.DashboardScreen
+import com.example.minimalphone.ui.LockScreen
+import com.example.minimalphone.ui.SetLimitScreen
 import com.example.minimalphone.ui.SettingsScreen
 import com.example.minimalphone.ui.theme.FocusLiteTheme
+import com.example.minimalphone.viewmodel.FocusViewModel
+import com.example.minimalphone.viewmodel.Screen
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 📘 BEGINNER CONCEPT: What is an Activity?
@@ -30,6 +37,11 @@ import com.example.minimalphone.ui.theme.FocusLiteTheme
 
 class MainActivity : ComponentActivity() {
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -40,32 +52,88 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    AppNavigation()
+                    AppNavigation(forceLock = intent.getBooleanExtra(EXTRA_FORCE_LOCK, false))
                 }
             }
         }
     }
-}
 
-// Simple screen navigation state
-enum class AppScreen {
-    DASHBOARD,
-    SETTINGS,
+    companion object {
+        const val EXTRA_FORCE_LOCK = "extra_force_lock"
+    }
 }
 
 @Composable
-fun AppNavigation() {
-    val currentScreen = remember { mutableStateOf(AppScreen.DASHBOARD) }
+fun AppNavigation(
+    forceLock: Boolean,
+    viewModel: FocusViewModel = viewModel(),
+) {
+    val state = viewModel.uiState.collectAsStateWithLifecycle().value
 
-    when (currentScreen.value) {
-        AppScreen.DASHBOARD -> {
+    if (forceLock) {
+        viewModel.onScreenRequested(Screen.LOCK)
+    }
+
+    when (state.currentScreen) {
+        Screen.DASHBOARD -> {
             DashboardScreen(
-                onSettingsClick = { currentScreen.value = AppScreen.SETTINGS }
+                state = state.dashboardState,
+                onOpenUsageSettingsClick = viewModel::openUsageAccessSettings,
+                onRefreshClick = viewModel::refreshNow,
+                onSetLimitClick = { viewModel.onScreenRequested(Screen.SET_LIMIT) },
+                onAppSelectionClick = { viewModel.onScreenRequested(Screen.APP_SELECTION) },
+                onSettingsClick = { viewModel.onScreenRequested(Screen.SETTINGS) },
             )
         }
-        AppScreen.SETTINGS -> {
+
+        Screen.SET_LIMIT -> {
+            SetLimitScreen(
+                currentLimitMinutes = state.settings.dailyLimitMinutes,
+                onSave = viewModel::saveDailyLimit,
+                onBack = { viewModel.onScreenRequested(Screen.DASHBOARD) },
+            )
+        }
+
+        Screen.APP_SELECTION -> {
+            val selectedPackages = if (state.settings.blockMode == AppBlockMode.BLOCK_SELECTED) {
+                state.settings.blockedPackages
+            } else {
+                state.settings.allowedPackages
+            }
+
+            AppSelectionScreen(
+                apps = state.apps,
+                selectedPackages = selectedPackages,
+                mode = state.settings.blockMode,
+                onTogglePackage = { packageName ->
+                    if (state.settings.blockMode == AppBlockMode.BLOCK_SELECTED) {
+                        viewModel.toggleBlockedPackage(packageName)
+                    } else {
+                        viewModel.toggleAllowedPackage(packageName)
+                    }
+                },
+                onModeChanged = viewModel::setBlockMode,
+                onBack = { viewModel.onScreenRequested(Screen.DASHBOARD) },
+            )
+        }
+
+        Screen.SETTINGS -> {
             SettingsScreen(
-                onBackClick = { currentScreen.value = AppScreen.DASHBOARD }
+                lockModeEnabled = state.settings.lockModeEnabled,
+                premiumEnabled = state.settings.premiumEnabled,
+                blockMode = state.settings.blockMode,
+                onLockModeChanged = viewModel::setLockModeEnabled,
+                onPremiumChanged = viewModel::setPremiumEnabled,
+                onSetLimit = { viewModel.onScreenRequested(Screen.SET_LIMIT) },
+                onOpenAppSelection = { viewModel.onScreenRequested(Screen.APP_SELECTION) },
+                onOpenAccessibilitySettings = viewModel::openAccessibilitySettings,
+                onBack = { viewModel.onScreenRequested(Screen.DASHBOARD) },
+            )
+        }
+
+        Screen.LOCK -> {
+            LockScreen(
+                onOpenSettings = { viewModel.onScreenRequested(Screen.SETTINGS) },
             )
         }
     }

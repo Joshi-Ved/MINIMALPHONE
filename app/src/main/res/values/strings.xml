@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">FocusLite</string>
+    <string name="tracking_notification_text">Tracking daily usage</string>
+    <string name="limit_reached_title">Limit Reached</string>
+    <string name="limit_reached_subtitle">Daily limit exceeded. Focus mode active.</string>
+    <string name="channel_tracking_name">Focus Tracking</string>
+    <string name="channel_alert_name">Focus Alerts</string>
 </resources>
