@@ -8,9 +8,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -66,25 +70,25 @@ import com.example.minimalphone.viewmodel.DashboardViewModel
  *
  * @param viewModel  Provided automatically by [viewModel()] — you rarely
  *                   need to create one yourself.
+ * @param onSettingsClick  Called when user taps the settings icon.
  */
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel = viewModel(),
+    onSettingsClick: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val usageStatsHelper = UsageStatsHelper(context)
 
     // ── Observe the ViewModel's state ────────────────────────────────────
-    // collectAsStateWithLifecycle() converts the StateFlow into a Compose
-    // State object.  It automatically stops collecting when the screen is
-    // not visible (saving battery).
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     // Delegate to a "stateless" version so we can preview it easily.
     DashboardContent(
         state = state,
-        onOpenUsageSettingsClick = usageStatsHelper::openUsageAccessSettings,
-        onRefreshClick = viewModel::refreshUsageNow,
+        onOpenUsageSettingsClick = viewModel::openUsageAccessSettings,
+        onRefreshClick = viewModel::refreshUsageAndSettings,
+        onSettingsClick = onSettingsClick,
     )
 }
 
@@ -98,6 +102,7 @@ private fun DashboardContent(
     state: UsageState,
     onOpenUsageSettingsClick: () -> Unit,
     onRefreshClick: () -> Unit,
+    onSettingsClick: () -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -106,12 +111,25 @@ private fun DashboardContent(
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.Top,
     ) {
-        // ── App title ────────────────────────────────────────────────────
-        Text(
-            text = "FocusLite",
-            style = MaterialTheme.typography.displayLarge,
-            color = MaterialTheme.colorScheme.onBackground,
-        )
+        // ── Title + Settings button ──────────────────────────────────────
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "FocusLite",
+                style = MaterialTheme.typography.displayLarge,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            IconButton(onClick = onSettingsClick) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    tint = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(8.dp))
 
@@ -248,6 +266,7 @@ private fun DashboardPreviewLight() {
             state = UsageState(usedMinutes = 80, dailyLimitMinutes = 120),
             onOpenUsageSettingsClick = {},
             onRefreshClick = {},
+            onSettingsClick = {},
         )
     }
 }
@@ -264,6 +283,7 @@ private fun DashboardPreviewDark() {
                 isLoading = false,
             ),
             onOpenUsageSettingsClick = {},
+            onSettingsClick = {},
             onRefreshClick = {},
         )
     }

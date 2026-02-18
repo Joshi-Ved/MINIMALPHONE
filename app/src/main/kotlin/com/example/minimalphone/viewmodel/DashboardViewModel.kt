@@ -2,9 +2,9 @@ package com.example.minimalphone.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.minimalphone.data.UsageStatsHelper
+import com.example.minimalphone.data.SettingsRepository
+import com.example.minimalphone.data.UsageRepository
 import com.example.minimalphone.data.UsageState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -51,33 +51,46 @@ import kotlinx.coroutines.withContext
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 📘 BEGINNER CONCEPT: What is a Coroutine?
+// 📘 BEGINNER CONCEPT: What is Flow.combine()?
 // ─────────────────────────────────────────────────────────────────────────────
-// A coroutine is a lightweight task that can pause and resume without blocking
-// the whole thread.  We use coroutines to do async work in a clean way.
+// combine() merges multiple streams (Flows) into ONE.
 //
-// 📘 BEGINNER CONCEPT: What is Dispatchers.IO?
-// Dispatchers.IO is a coroutine dispatcher optimized for disk/network/system
-// operations. Querying UsageStatsManager can be heavy, so we run it on IO.
+// Example:
+//   val usageFlow = repository.getUsageNow()         // emits: 30, 40, 50, ...
+//   val limitFlow  = repository.getDailyLimit()      // emits: 120, 150, ...
 //
-// 📘 BEGINNER CONCEPT: Why use viewModelScope?
-// viewModelScope is tied to the ViewModel lifecycle. When ViewModel is cleared,
-// its coroutines are automatically cancelled (no leaks, no wasted work).
+//   combine(usageFlow, limitFlow) { usage, limit ->
+//       DashboardState(used = usage, limit = limit)
+//   }
 //
-// 📘 BEGINNER CONCEPT: Why avoid heavy work on Main thread?
-// The main thread draws UI and handles touch input. Heavy work there causes
-// jank (skipped frames). Running heavy work on IO keeps UI smooth.
+// Result: each time either flow emits, the lambda runs and produces a new
+// DashboardState. This keeps UI in sync with BOTH data sources automatically.
+//
+// Difference Flow vs StateFlow:
+//   Flow:       No current value. Cold (lazy). Each subscriber starts fresh.
+//   StateFlow:  Always has a current value. Warm. All subscribers see same value.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 📘 BEGINNER CONCEPT: Repository Pattern
+// ─────────────────────────────────────────────────────────────────────────────
+// Repository is a layer that abstracts WHERE data comes from.
+// ViewModel doesn't care if data comes from DataStore, database, or API.
+// It just calls repository methods.
+//
+// This makes code testable (swap real repo with fake one), maintainable,
+// and flexible for future changes.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * ViewModel for the Dashboard screen.
  *
- * Holds the current [UsageState] and exposes actions the UI can trigger.
+ * Combines real usage data + user's daily limit preference using repositories.
  */
 class DashboardViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val usageStatsHelper = UsageStatsHelper(application.applicationContext)
-    private val refreshIntervalMs = 30_000L
+    private val settingsRepository = SettingsRepository(application.applicationContext)
+    private val usageRepository = UsageRepository(application.applicationContext)
 
     // ── Internal mutable state (only this class can change it) ───────────
     private val _uiState = MutableStateFlow(UsageState())
@@ -88,21 +101,21 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
     val uiState: StateFlow<UsageState> = _uiState.asStateFlow()
 
     init {
-        startUsageAutoRefresh()
+        startAutoRefresh()
     }
 
-    private fun startUsageAutoRefresh() {
+    private fun startAutoRefresh() {
         viewModelScope.launch {
             while (isActive) {
-                refreshUsageNow()
-                delay(refreshIntervalMs)
+                refreshUsageAndSettings()
+                delay(30_000L)
             }
         }
     }
 
-    fun refreshUsageNow() {
+    fun refreshUsageAndSettings() {
         viewModelScope.launch {
-            val hasPermission = usageStatsHelper.hasUsageAccessPermission()
+            val hasPermission = usageRepository.hasUsageAccessPermission()
 
             if (!hasPermission) {
                 _uiState.update { current ->
@@ -118,16 +131,31 @@ class DashboardViewModel(application: Application) : AndroidViewModel(applicatio
             _uiState.update { current -> current.copy(hasUsagePermission = true, isLoading = true) }
 
             val usageMinutes = withContext(Dispatchers.IO) {
-                usageStatsHelper.getTodayForegroundUsageMinutes()
+                usageRepository.getTodayForegroundUsageMinutes()
             }
 
-            _uiState.update { current ->
-                current.copy(
-                    hasUsagePermission = true,
-                    isLoading = false,
-                    usedMinutes = usageMinutes,
-                )
+            // Collect daily limit from DataStore via repository
+            settingsRepository.getDailyLimitMinutesFlow().collect { dailyLimit ->
+                _uiState.update { current ->
+                    current.copy(
+                        hasUsagePermission = true,
+                        isLoading = false,
+                        usedMinutes = usageMinutes,
+                        dailyLimitMinutes = dailyLimit,
+                    )
+                }
             }
+        }
+    }
+
+    fun openUsageAccessSettings() {
+        usageRepository.openUsageAccessSettings()
+    }
+
+    fun updateDailyLimit(minutes: Int) {
+        viewModelScope.launch {
+            settingsRepository.setDailyLimitMinutes(minutes)
+            refreshUsageAndSettings()
         }
     }
 }

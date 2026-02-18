@@ -7,8 +7,12 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import com.example.minimalphone.ui.DashboardScreen
+import com.example.minimalphone.ui.SettingsScreen
 import com.example.minimalphone.ui.theme.FocusLiteTheme
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,26 +32,41 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // enableEdgeToEdge() lets our UI draw behind the system bars
-        // (status bar, navigation bar) for a modern full-screen look.
         enableEdgeToEdge()
 
-        // setContent { } is where we plug in our Compose UI.
-        // Everything inside this lambda IS the user interface.
         setContent {
-            // FocusLiteTheme wraps the app in our custom Material3 colors
-            // and typography so every composable inside inherits the theme.
             FocusLiteTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    // DashboardScreen is our one-and-only screen.
-                    // It creates its own DashboardViewModel internally.
-                    DashboardScreen()
+                    AppNavigation()
                 }
             }
+        }
+    }
+}
+
+// Simple screen navigation state
+enum class AppScreen {
+    DASHBOARD,
+    SETTINGS,
+}
+
+@Composable
+fun AppNavigation() {
+    val currentScreen = remember { mutableStateOf(AppScreen.DASHBOARD) }
+
+    when (currentScreen.value) {
+        AppScreen.DASHBOARD -> {
+            DashboardScreen(
+                onSettingsClick = { currentScreen.value = AppScreen.SETTINGS }
+            )
+        }
+        AppScreen.SETTINGS -> {
+            SettingsScreen(
+                onBackClick = { currentScreen.value = AppScreen.DASHBOARD }
+            )
         }
     }
 }
